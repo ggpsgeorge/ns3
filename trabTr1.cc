@@ -7,6 +7,7 @@
 #include "ns3/csma-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/flow-monitor-module.h"
+#include "ns3/yans-wifi-helper.h"
 
 #include "ns3/csma-star-helper.h"
 #include "ns3/node-list.h"
@@ -42,6 +43,9 @@ int main(int argc, char *argv[]){
 	Config::SetDefault("ns3::OnOffApplication::DataRate", StringValue("14kb/s"));
 
 	uint32_t nNodes = 5;
+	uint32_t nWifi1 = 10;
+	uint32_t nWifi2 = 10;
+
 
 	CsmaHelper csma;
 	csma.SetChannelAttribute("DataRate", StringValue("5Mbps"));
@@ -49,13 +53,13 @@ int main(int argc, char *argv[]){
 
 	CsmaStarHelper star(nNodes, csma);
 
-	//Completar cada LAN com mais nos
 	NodeContainer fillNodes;
 
 	NetDeviceContainer fillDevices;
 
 	uint32_t fNodes = 10;
 
+	//Criando nos da LAN e preenchendo
 	for(uint32_t i = 0; i < star.GetSpokeDevices().GetN();++i){
 		Ptr<Channel> channel = star.GetSpokeDevices().Get(i)->GetChannel();
 		Ptr<CsmaChannel> csmaChannel = channel -> GetObject<CsmaChannel>();
@@ -73,6 +77,7 @@ int main(int argc, char *argv[]){
 
 	Ipv4AddressHelper address;
 
+	//Dando a cada no um endereco
 	for(uint32_t i = 0; i < star.SpokeCount(); ++i){
 		std::ostringstream subnet;
 	  	subnet << "10.1." << i << ".0";
@@ -83,6 +88,108 @@ int main(int argc, char *argv[]){
 			address.Assign (fillDevices.Get (i * fNodes + j));
 		}
 	}
+
+	//Criar nos wifi
+
+	NodeContainer p2pNodes1, p2pNodes2;
+	p2pNodes1.Create(2); 
+	p2pNodes2.Create(2); 
+
+	
+	PointToPointHelper pointToPoint;
+	pointToPoint.SetDeviceAttribute ("DataRate", StringValue ("5Mbps"));
+	pointToPoint.SetChannelAttribute ("Delay", StringValue ("2ms"));
+
+	NetDeviceContainer p2pDevices1, p2pDevices2;
+	p2pDevices1 = pointToPoint.Install (p2pNodes1);
+	p2pDevices2 = pointToPoint.Install (p2pNodes2);
+
+	NodeContainer wifiNodes1, wifiNodes2;
+
+	wifiNodes1.Create(nWifi1);
+	wifiNodes2.Create(nWifi2);
+
+	NodeContainer wifiApNodes1 = p2pNodes1.Get(1);
+	NodeContainer wifiApNodes2 = p2pNodes2.Get(1);
+
+	YansWifiChannelHelper channel1 = YansWifiChannelHelper::Default();
+	YansWifiChannelHelper channel2 = YansWifiChannelHelper::Default();
+
+	YansWifiPhyHelper phy1 = YansWifiPhyHelper::Default();
+	YansWifiPhyHelper phy2 = YansWifiPhyHelper::Default();
+
+	phy1.SetChannel(channel1.Create());
+	phy2.SetChannel(channel2.Create());
+
+	WifiHelper wifi1, wifi2;
+
+	wifi1.SetRemoteStationManager("ns3::AarfWifiManager");
+	wifi2.SetRemoteStationManager("ns3::AarfWifiManager");
+
+	WifiMacHelper mac1, mac2;
+
+	Ssid ssid = Ssid("ns-3-ssid");
+
+	mac1.SetType("ns3::StaWifiMac", "Ssid", SsidValue(ssid), "ActiveProbing", BooleanValue(false));
+	mac2.SetType("ns3::StaWifiMac", "Ssid", SsidValue(ssid), "ActiveProbing", BooleanValue(false));
+
+	NetDeviceContainer staDevices1, staDevices2;
+	staDevices1 = wifi1.Install(phy1, mac1, wifiNodes1);
+	staDevices2 = wifi2.Install(phy2, mac2, wifiNodes2);
+
+	mac1.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid));
+	mac2.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid));
+
+	NetDeviceContainer appDevices1, appDevices2;
+	appDevices1 = wifi1.Install(phy1, mac1, wifiApNodes1);
+	appDevices2 = wifi1.Install(phy2, mac2, wifiApNodes2);
+
+	MobilityHelper mobility1, mobility2;
+
+	mobility1.SetPositionAllocator ("ns3::GridPositionAllocator",
+                                 "MinX", DoubleValue (0.0),
+                                 "MinY", DoubleValue (0.0),
+                                 "DeltaX", DoubleValue (5.0),
+                                 "DeltaY", DoubleValue (10.0),
+                                 "GridWidth", UintegerValue (3),
+                                 "LayoutType", StringValue ("RowFirst"));
+
+  	mobility2.SetPositionAllocator ("ns3::GridPositionAllocator",
+                                 "MinX", DoubleValue (0.0),
+                                 "MinY", DoubleValue (0.0),
+                                 "DeltaX", DoubleValue (5.0),
+                                 "DeltaY", DoubleValue (10.0),
+                                 "GridWidth", UintegerValue (3),
+                                 "LayoutType", StringValue ("RowFirst"));
+
+  	mobility1.SetMobilityModel("ns3::RandomWalk2dMobilityModel", "Bounds", 
+  								RectangleValue(Rectangle(-50,50,-50,50)));
+
+  	mobility2.SetMobilityModel("ns3::RandomWalk2dMobilityModel", "Bounds", 
+  								RectangleValue(Rectangle(-50,50,-50,50)));
+
+  	mobility1.Install(wifiNodes1);
+  	mobility2.Install(wifiNodes2);
+
+  	mobility1.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  	mobility1.Install (wifiApNodes1);
+
+  	mobility2.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  	mobility2.Install (wifiApNodes2);
+
+  	internet.Install(wifiNodes1);
+  	internet.Install(wifiNodes2);
+  	internet.Install(wifiApNodes1);
+  	internet.Install(wifiApNodes2);
+
+  	address.SetBase ("10.2.4.0", "255.255.255.0");
+  	address.Assign (staDevices1);
+  	address.Assign (appDevices1);
+
+  
+  	address.SetBase ("10.2.5.0", "255.255.255.0");
+  	address.Assign (staDevices2);
+  	address.Assign (appDevices2);
 
 	uint16_t port = 8000;
 
@@ -122,7 +229,7 @@ int main(int argc, char *argv[]){
 
   	Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
-  	csma.EnablePcapAll("csma-star");
+  	csma.EnablePcapAll("csma-star_2wifis");
 
     Simulator::Run ();
     Simulator::Destroy ();
