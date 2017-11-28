@@ -57,7 +57,7 @@ int main(int argc, char *argv[]){
 
 	NetDeviceContainer fillDevices;
 
-	uint32_t fNodes = 10;
+	uint32_t fNodes = 11;
 
 	//Criando nos da LAN e preenchendo
 	for(uint32_t i = 0; i < star.GetSpokeDevices().GetN();++i){
@@ -191,6 +191,11 @@ int main(int argc, char *argv[]){
   	address.Assign (staDevices2);
   	address.Assign (appDevices2);
 
+  	UdpEchoServerHelper echoServer(10);
+  	ApplicationContainer serverApps = echoServer.Install(fillNodes.Get(fNodes));
+  	serverApps.Start(Seconds(1.0));
+  	serverApps.Stop(Seconds(10.0));
+
 	uint16_t port = 8000;
 
 	//Hub ira pegar para ele qualquer endereco Ipv4
@@ -199,6 +204,7 @@ int main(int argc, char *argv[]){
 	ApplicationContainer hubApp = packetSinker.Install(star.GetHub());
 	hubApp.Start(Seconds(1.0));
 	hubApp.Stop(Seconds(10.0));
+
 	
 	OnOffHelper onOff("ns3::TcpSocketFactory", Address());
 	onOff.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
@@ -229,10 +235,14 @@ int main(int argc, char *argv[]){
 
   	Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
-  	csma.EnablePcapAll("csma-star_2wifis");
+  	csma.EnablePcapAll("csma-star");
+  	phy1.EnablePcapAll("wifi1");
+  	phy2.EnablePcapAll("wifi2");
+  	pointToPoint.EnablePcapAll("p2p");
 
     Simulator::Run ();
-    Simulator::Destroy ();
+    Simulator::Stop(Seconds(10.0));
+    Simulator::Destroy();
 
 
 	return 0;
