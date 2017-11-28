@@ -39,27 +39,29 @@ using namespace ns3;
 
 int main(int argc, char *argv[]){
 
-	Config::SetDefault("ns3::OnOffApplication::PacketSize", UintegerValue(137));
-	Config::SetDefault("ns3::OnOffApplication::DataRate", StringValue("14kb/s"));
+	//Config::SetDefault("ns3::OnOffApplication::PacketSize", UintegerValue(137));
+	//Config::SetDefault("ns3::OnOffApplication::DataRate", StringValue("14kb/s"));
 
+	//Quantidade de nos csma, 1 eh o hub e 4 serão as demais LANs
 	uint32_t nNodes = 5;
-	uint32_t nWifi1 = 10;
-	uint32_t nWifi2 = 10;
 
-
+	//Cria o canal csma
 	CsmaHelper csma;
 	csma.SetChannelAttribute("DataRate", StringValue("5Mbps"));
 	csma.SetChannelAttribute("Delay", StringValue("2ms"));
 
+	//Cria a estrela com seus 5 nos usando o canal csma 
 	CsmaStarHelper star(nNodes, csma);
 
+	//fillNodes será u m container para os demais nos que irao popular cada no
 	NodeContainer fillNodes;
 
 	NetDeviceContainer fillDevices;
 
+	//Cada no LAN tera 11 nos incluidos nele
 	uint32_t fNodes = 11;
 
-	//Criando nos da LAN e preenchendo
+	//Preenchendo cada no da estrela com fNodes
 	for(uint32_t i = 0; i < star.GetSpokeDevices().GetN();++i){
 		Ptr<Channel> channel = star.GetSpokeDevices().Get(i)->GetChannel();
 		Ptr<CsmaChannel> csmaChannel = channel -> GetObject<CsmaChannel>();
@@ -69,15 +71,17 @@ int main(int argc, char *argv[]){
 		fillDevices.Add(csma.Install(newNodes, csmaChannel));
 	}
 
+	//Instala os nos
 	InternetStackHelper internet;
 	star.InstallStack(internet);
 	internet.Install(fillNodes);
 
+	//Da a estrela ou hub uma endereco ipv4
 	star.AssignIpv4Addresses (Ipv4AddressHelper("10.1.0.0", "255.255.255.0"));
 
 	Ipv4AddressHelper address;
 
-	//Dando a cada no um endereco
+	//Da a cada no preenchido um endereco ipv4
 	for(uint32_t i = 0; i < star.SpokeCount(); ++i){
 		std::ostringstream subnet;
 	  	subnet << "10.1." << i << ".0";
@@ -89,12 +93,34 @@ int main(int argc, char *argv[]){
 		}
 	}
 
-	//Criar nos wifi
+	//Cria um servidor, sendo ele um dos nos preenchidos
+	UdpEchoServerHelper echoServer(10);
+  	ApplicationContainer serverApps = echoServer.Install(fillNodes.Get(fNodes));
+  	serverApps.Start(Seconds(1.0));
+  	serverApps.Stop(Seconds(10.0));
+
+  	uint16_t port = 8000;
+
+	//Hub ira pegar para ele qualquer endereco Ipv4
+	Address hubLocalAddress (InetSocketAddress(Ipv4Address::GetAny(), port));
+	PacketSinkHelper packetSinker ("ns3::TcpSocketFactory", hubLocalAddress);
+	ApplicationContainer hubApp = packetSinker.Install(star.GetHub());
+	hubApp.Start(Seconds(1.0));
+	hubApp.Stop(Seconds(10.0));
+
+	Ipv4GlobalRoutingHelper::PopulateRoutingTables();
+
+  	csma.EnablePcapAll("csma-star");
+
+  	//##########################################################################################
+
+  	//Quantidade de nos para cada wifi
+	uint32_t nWifi1 = 10;
+	uint32_t nWifi2 = 10;
 
 	NodeContainer p2pNodes1, p2pNodes2;
 	p2pNodes1.Create(2); 
 	p2pNodes2.Create(2); 
-
 	
 	PointToPointHelper pointToPoint;
 	pointToPoint.SetDeviceAttribute ("DataRate", StringValue ("5Mbps"));
@@ -185,57 +211,39 @@ int main(int argc, char *argv[]){
   	address.SetBase ("10.2.4.0", "255.255.255.0");
   	address.Assign (staDevices1);
   	address.Assign (appDevices1);
-
   
   	address.SetBase ("10.2.5.0", "255.255.255.0");
   	address.Assign (staDevices2);
   	address.Assign (appDevices2);
 
-  	UdpEchoServerHelper echoServer(10);
-  	ApplicationContainer serverApps = echoServer.Install(fillNodes.Get(fNodes));
-  	serverApps.Start(Seconds(1.0));
-  	serverApps.Stop(Seconds(10.0));
-
-	uint16_t port = 8000;
-
-	//Hub ira pegar para ele qualquer endereco Ipv4
-	Address hubLocalAddress (InetSocketAddress(Ipv4Address::GetAny(), port));
-	PacketSinkHelper packetSinker ("ns3::TcpSocketFactory", hubLocalAddress);
-	ApplicationContainer hubApp = packetSinker.Install(star.GetHub());
-	hubApp.Start(Seconds(1.0));
-	hubApp.Stop(Seconds(10.0));
-
 	
-	OnOffHelper onOff("ns3::TcpSocketFactory", Address());
-	onOff.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
-	onOff.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+	//OnOffHelper onOff("ns3::TcpSocketFactory", Address());
+	//onOff.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+	//onOff.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
 
-	ApplicationContainer spokeApps;
+	// ApplicationContainer spokeApps;
 
-	for (uint32_t i = 0; i < star.SpokeCount (); ++i){
-        AddressValue remoteAddress (InetSocketAddress (star.GetHubIpv4Address (i), port));
- 	    onOff.SetAttribute ("Remote", remoteAddress);
-  		spokeApps.Add (onOff.Install (star.GetSpokeNode (i)));
-    }
+	// for (uint32_t i = 0; i < star.SpokeCount (); ++i){
+ //        AddressValue remoteAddress (InetSocketAddress (star.GetHubIpv4Address (i), port));
+ // 	    onOff.SetAttribute ("Remote", remoteAddress);
+ //  		spokeApps.Add (onOff.Install (star.GetSpokeNode (i)));
+ //    }
 
-  	spokeApps.Start (Seconds (1.0));
-  	spokeApps.Stop (Seconds (10.0));
+ //  	spokeApps.Start (Seconds (1.0));
+ //  	spokeApps.Stop (Seconds (10.0));
 
-  	ApplicationContainer fillApps;
+ //  	ApplicationContainer fillApps;
 
-	for (uint32_t i = 0; i < fillNodes.GetN(); ++i){
-        AddressValue remoteAddress (InetSocketAddress (star.GetHubIpv4Address (i/fNodes), port));
- 	    onOff.SetAttribute ("Remote", remoteAddress);
-  		fillApps.Add (onOff.Install (fillNodes.Get(i)));
+	// for (uint32_t i = 0; i < fillNodes.GetN(); ++i){
+ //        AddressValue remoteAddress (InetSocketAddress (star.GetHubIpv4Address (i/fNodes), port));
+ // 	    onOff.SetAttribute ("Remote", remoteAddress);
+ //  		fillApps.Add (onOff.Install (fillNodes.Get(i)));
 
-    }
+ //    }
 
-  	fillApps.Start (Seconds (1.0));
-  	fillApps.Stop (Seconds (10.0));
+ //  	fillApps.Start (Seconds (1.0));
+ //  	fillApps.Stop (Seconds (10.0));
 
-  	Ipv4GlobalRoutingHelper::PopulateRoutingTables();
-
-  	csma.EnablePcapAll("csma-star");
   	phy1.EnablePcapAll("wifi1");
   	phy2.EnablePcapAll("wifi2");
   	pointToPoint.EnablePcapAll("p2p");
